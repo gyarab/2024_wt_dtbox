@@ -36,6 +36,8 @@ mqtt_client.set_callback(handle_mqtt_message)
 
 ensure_subscriptions(dtbox_network, mqtt_client, [MQTT_TOPIC_GAME])
 
+mqtt_client.publish("dtbox/register", hostname())
+
 button_o.on_press(on_button_press)
 button_x.on_press(on_button_press)
 
