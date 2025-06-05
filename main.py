@@ -27,7 +27,7 @@ def _handle_message(topic, message):
         elif topic == MQTT_SIZE and message:
             set_nodes_to_click(int(message))
     elif topic == MQTT_PRESSED and message:
-        pressed(message)
+        press(message)
     
         
 def change_game_state(to_switch):
@@ -42,8 +42,8 @@ def set_nodes_to_click(x):
     global nodes_to_click
     nodes_to_click += x
 
-def pressed(MAC):
-    if MAC == nodes[next_node]:
+def press(MAC):
+    if MAC == nodes[next_node] and !pressed:
         pressed = !pressed
     
 def get_next_node():
@@ -62,7 +62,7 @@ while True:
     mqtt_client.check_msg()
     if game_state and pressed:
         if get_next_node() is not None:
-            mqtt_client.publish(nodes[next_node])
+            mqtt_client.publish(MQTT_NEXT, nodes[next_node])
 
     
         
