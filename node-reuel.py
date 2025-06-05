@@ -5,6 +5,9 @@ from dtbox.mqtt.shortcuts import mqtt_client, ensure_subscriptions
 from dtbox.pinout import PIN_LED_RED, PIN_LED_AMBER, PIN_LED_GREEN
 from machine import Pin
 from time import sleep
+
+hostname_str = hostname()
+
 red = Pin(PIN_LED_RED, Pin.OUT)
 yellow = Pin(PIN_LED_AMBER, Pin.OUT)
 green = Pin(PIN_LED_GREEN, Pin.OUT)
@@ -13,12 +16,12 @@ MQTT_TOPIC = "dtbox/game"
 delka = 10
 display.show("....")
 
-def do_nothing(a, b):
-    pass
+kontroluj = True
 
 def zprava(topic, message):
+    global kontroluj
     if topic == MQTT_TOPIC and message == hostname:
-        mqtt_client.set_callback(do_nothing)
+        kontroluj = False
         button_o.on_press(zhasni)
         button_x.on_press(zhasni)
         red.on()
@@ -27,8 +30,9 @@ def zprava(topic, message):
         display.show("8888")
 
 def zhasni():
+    global kontroluj
     mqtt_client.publish("dtbox/pressed", "")
-    mqtt_client.set_callback(zprava)
+    kontroluj = True
     button_o._on_press_callbacks.clear()
     button_x._on_press_callbacks.clear()
     red.off()
@@ -38,10 +42,13 @@ def zhasni():
 
 mqtt_client.set_callback(zprava)
 ensure_subscriptions(network, mqtt_client, [MQTT_TOPIC])
-mqtt_client.publish("dtbox/register", hostname)
+mqtt_client.publish("dtbox/register", hostname_str)
 
 display.show("    ")
 
 while True:
-    sleep(5)
+    sleep(0.1)
     ensure_subscriptions(network, mqtt_client, [MQTT_TOPIC])
+    if kontroluj:
+        mqtt_client.check_msg()
+
