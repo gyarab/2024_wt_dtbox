@@ -2,6 +2,9 @@ from dtbox.mqtt.shortcuts import mqtt_client, ensure_subscriptions
 from dtbox.network.shortcuts import network
 from dtbox.wsled.shortcuts import wsled
 from random import randint
+from time import sleep
+from dtbox.button.shortcuts import button_o
+from dtbox.display.shortcuts import display
 
 
 nodes = []
@@ -10,9 +13,6 @@ nodes_to_click = 5
 next_node = -1
 pressed = True
 MQTT_START, MQTT_REGISTER, MQTT_GAME, MQTT_PRESSED, MQTT_SIZE = "dtbox/start", "dtbox/register", "dtbox/game", "dtbox/next", "dtbox/size"
-mqtt_client.set_callback(_handle_message)
-ensure_subscriptions(network, mqtt_client, [MQTT_REGISTER, MQTT_GAME, MQTT_NEXT, MQTT_SIZE])
-
 
 def _handle_message(topic, message):
     topic = topic.decode()
@@ -21,13 +21,20 @@ def _handle_message(topic, message):
     if topic == MQTT_START and message:
         chnge_game_state(bool(message))
         
-    if !game_state:
+    if not game_state:
         if topic == MQTT_REGISTER and message:
             add_node(message)
         elif topic == MQTT_SIZE and message:
             set_nodes_to_click(int(message))
     elif topic == MQTT_PRESSED and message:
         press(message)
+
+
+
+mqtt_client.set_callback(_handle_message)
+ensure_subscriptions(network, mqtt_client, [MQTT_START, MQTT_REGISTER, MQTT_GAME, MQTT_PRESSED, MQTT_SIZE])
+
+
     
         
 def change_game_state(to_switch):
@@ -43,8 +50,8 @@ def set_nodes_to_click(x):
     nodes_to_click += x
 
 def press(MAC):
-    if MAC == nodes[next_node] and !pressed:
-        pressed = !pressed
+    if MAC == nodes[next_node] and not pressed:
+        pressed = not pressed
     
 def get_next_node():
     global next_node
@@ -56,15 +63,29 @@ def get_next_node():
         try_next_node = randint(0, len(nodes))
     next_node = try_next_node
     return next_node
-    
-        
-while True:
-    mqtt_client.check_msg()
-    if game_state and pressed:
-        if get_next_node() is not None:
-            mqtt_client.publish(MQTT_NEXT, nodes[next_node])
+   
+running = True
 
+def leave():
+    global running
+    print("leaving")
+    running = False
     
+button_o.on_press(leave)
         
+while running:
+    try:
+        mqtt_client.check_msg()
+        if game_state and pressed:
+            if get_next_node() is not None:
+                mqtt_client.publish(MQTT_GAME, nodes[next_node])
+        sleep(0.1)
+        display.show(str(running))
+        print(running)
+    except Exception as e:
+        print("Chyba při MQTT:", e)
+        display.show("ERROR")
+        
+
         
         
