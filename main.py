@@ -37,14 +37,18 @@ game_state = False #False is not playing and True is running game
 nodes_to_click = 10
 next_node = -1
 pressed = True
-MQTT_START, MQTT_REGISTER, MQTT_GAME, MQTT_PRESSED, MQTT_SIZE = "dtbox/start", "dtbox/register", "dtbox/game", "dtbox/next", "dtbox/size"
+MQTT_START, MQTT_REGISTER, MQTT_GAME, MQTT_PRESSED, MQTT_SIZE = "dtbox/start", "dtbox/register", "dtbox/game", "dtbox/pressed", "dtbox/size"
 
 def _handle_message(topic, message):
     topic = topic.decode()
     message = message.decode()
     
     if topic == MQTT_START and message:
-        change_game_state(bool(message))
+        if message == "False":
+            message = False
+        else:
+            message = True
+        change_game_state(message)
         
     if not game_state:
         if topic == MQTT_REGISTER and message:
@@ -61,13 +65,15 @@ ensure_subscriptions(network, mqtt_client, [MQTT_START, MQTT_REGISTER, MQTT_GAME
         
 def change_game_state(to_switch): 
     global game_state
-    print(to_switch, "to swtch")
+    print(to_switch, "to switch")
     game_state = to_switch
             
 def add_node(MAC_adress):
     global nodes
     print(MAC_adress, "MAC adress")
-    nodes.append(MAC_adress)
+    if MAC_adress not in nodes:
+        nodes.append(MAC_adress)
+        display.show(len(nodes))
     
 def set_nodes_to_click(x):
     global nodes_to_click
@@ -75,20 +81,29 @@ def set_nodes_to_click(x):
     nodes_to_click = x
 
 def press(MAC):
+    global pressed
     print(MAC, "MAC")
     if len(nodes) <= 1:
         change_game_state(False)
     if MAC == nodes[next_node] and not pressed:
-        pressed = not pressed
+        pressed = True
     
 def get_next_node():
-    global next_node
+    global next_node, pressed
+    if nodes_to_click == 0:
+        mqtt_client.publish(MQTT_START, "False")
+        pressed = True
+        next_node = -1
+        return None
     if len(nodes) <= 1:
         change_game_state(False)
         return None
     try_next_node = randint(0, len(nodes))
-    while try_next_node != next_node:
-        try_next_node = randint(0, len(nodes))
+    if try_next_node == next_node:
+        if try_next_node + 1 == len(nodes):
+            try_next_node = 0
+        else:
+            try_next_node += 1
     next_node = try_next_node
     return next_node
    
@@ -104,8 +119,11 @@ while running:
     try:
         mqtt_client.check_msg()
         if game_state and pressed:
-            if get_next_node() is not None:
+            if get_next_node() is not None and -1 < next_node < len(nodes):
                 mqtt_client.publish(MQTT_GAME, nodes[next_node])
+                pressed = False
+                set_nodes_to_click(nodes_to_click - 1)
+                print("sending")
         sleep(0.1)
     except Exception as e:
         print("Chyba při MQTT:", e)
