@@ -1,36 +1,57 @@
 import time
-import machine
 import ujson
+import machine
+from machine import Pin
+import network
 
 from dtbox.display.shortcuts import display
 from dtbox.button.shortcuts import button_o, button_x
-from dtbox.led.shortcuts import led
-from dtbox.network.shortcuts import connect 
-from dtbox.mqtt.shortcuts import connect_mqtt 
+from dtbox.network.shortcuts import network as dtbox_network
+from dtbox.mqtt.shortcuts import mqtt_client
+
+
+WIFI_SSID = b"[vs-uk]"       
+WIFI_PASSWORD = b"[7uvtqZn4xa]"
 
 MQTT_TOPIC = b"dtbox/pressed"
 alarm_trigger = False
 
-def ensure_subscriptions(network_module, client, subscriptions=[]):
-    wifi_connected = False
-    broker_connected = False
-    while not (wifi_connected and broker_connected):
-        try:
-            if not wifi_connected:
-                print("w", end="")
-                wifi_connected = network_module.connect()
-            if not broker_connected:
-                print("b", end="")
-                client.connect()
-                broker_connected = True
-                for subscription in subscriptions:
-                    client.subscribe(subscription)
-        except (OSError, IndexError):
-            print(".", end="")
-            time.sleep(0.5)
-    print()
+def run_light_animation():
+    display.show("Animation", 500)
 
-def handle_message(topic, message):
+def ensure_connected(network_module, client_instance, subscriptions=[]):
+    wifi_ok = False
+    broker_ok = False
+    
+    while not (wifi_ok and broker_ok):
+        try:
+            if not wifi_ok:
+                print("w", end="")
+                wifi_ok = network_module.connect() 
+                if not wifi_ok: 
+                    raise OSError("WiFi connection failed") 
+
+            if wifi_ok and not broker_ok: 
+                print("b", end="")
+                client_instance.server = MQTT_BROKER_ADDRESS
+                client_instance.port = MQTT_BROKER_PORT
+                client_instance.connect() 
+                broker_ok = True 
+                for sub in subscriptions:
+                    client_instance.subscribe(sub)
+                    print(f"Subscribed to: {sub.decode()}")
+                
+        except (OSError, IndexError) as e:
+            print(f". (Error: {e})", end="")
+            wifi_ok = False   
+            broker_ok = False 
+            time.sleep(2) 
+            display.show("CONN ERR", scroll=True)
+
+    print("\nConnected to Wi-Fi and MQTT broker.")
+    display.show("Connected", scroll=True)
+
+def handle_mqtt_message(topic, message):
     global alarm_trigger
 
     topic_str = topic.decode()
@@ -41,56 +62,53 @@ def handle_message(topic, message):
     if topic == MQTT_TOPIC and message_str:
         if message_str == "0":
             alarm_trigger = False
-            print("Alarm deaktivován")
+            print("Alarm deactivated")
+            display.show("ALARM OFF", 1000)
         else:
             alarm_trigger = True
-            print("Alarm aktivován")
+            print("Alarm activated")
+            display.show("ALARM ON", 1000)
             run_light_animation()
 
-def run_light_animation():
-    led.set_lights(True, False, False, "CERVENA", 1000)
-    led.set_lights(True, True, False, "PRIPRAV SE", 1000)
-    led.set_lights(False, False, True, "JEĎ", 1000)
-    display.show("LIGHTS!")
+def on_button_press(pin=None):
+    connected = dtbox_network.connect() 
+    
+    if connected:
+        try:
+            wlan_if = network.WLAN(network.STA_IF) 
+            mac = wlan_if.config('mac') 
 
-def send_mac_over_mqtt(pin=None):
-    wlan = connect()
-    mac = wlan.config('mac')
-    mac_str = ':'.join('{:02X}'.format(b) for b in mac)
-    print("MAC:", mac_str)
+            mac_str = ':'.join('{:02X}'.format(b) for b in mac)
+            print("MAC:", mac_str)
 
-    try:
-        display.show("MQTT...")
-        client.publish(MQTT_TOPIC, mac_str)
+            display.show("MQTT...", scroll=True)
+            mqtt_client.publish(MQTT_TOPIC, mac_str) 
 
-        light_command = ujson.dumps({
-            "command": "lights",
-            "sequence": "go"
-        })
-        client.publish(MQTT_TOPIC, light_command)
+            display.show("OK", scroll=True)
 
-        display.show("OK")
+        except Exception as e:
+            print("Chyba při MQTT:", e)
+            display.show("ERROR", scroll=True)
+    else:
+        print("Failed to connect to Wi-Fi.")
+        display.show("NO WIFI", scroll=True)
 
-    except Exception as e:
-        print("Chyba při MQTT:", e)
-        display.show("ERROR")
+mqtt_client.set_callback(handle_mqtt_message)
 
+ensure_connected(dtbox_network, mqtt_client, [MQTT_TOPIC])
 
-client = connect_mqtt(callback=handle_message)
-ensure_subscriptions(connect, client, [MQTT_TOPIC])
-
-button_o.on_press(send_mac_over_mqtt)
-button_x.on_press(send_mac_over_mqtt)
+button_o.on_press(on_button_press)
+button_x.on_press(on_button_press)
 
 try:
-    display.show("Ready")
+    display.show("Ready", scroll=True)
 
     while True:
-        client.check_msg()
+        mqtt_client.check_msg()
         time.sleep(0.1)
 
 except Exception as e:
     print("Chyba v hlavní smyčce:", e)
-    display.show("ERROR")
+    display.show("FATAL ERR", scroll=True)
     time.sleep(5)
     machine.reset()
