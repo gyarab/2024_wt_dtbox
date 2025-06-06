@@ -52,4 +52,3 @@ except Exception as e:
     print("Chyba v hlavní smyčce:", e)
     display.show("FATAL ERR", scroll=True)
     time.sleep(5)
-    # machine.reset()
